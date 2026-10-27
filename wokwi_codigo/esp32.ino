@@ -1,3 +1,7 @@
+// Vinícius Campestrini RM 570703
+// Vinícius Honda RM 569744
+// Guilherme Vilela RM 569177
+
 
 #include <WiFi.h>
 #include <PubSubClient.h>
@@ -10,7 +14,7 @@
 const char* WIFI_SSID = "Wokwi-GUEST";
 const char* WIFI_PASSWORD = "";
 
-const char* MQTT_SERVER = "3.94.168.155";
+const char* MQTT_SERVER = "34.201.100.78";
 const int MQTT_PORT = 1883;
 const char* MQTT_CLIENT_ID = "fiware_001";
 
@@ -47,13 +51,19 @@ unsigned long ultimaLeituraLDR = 0;
 unsigned long ultimaLeituraDHT = 0;
 unsigned long ultimoEstado = 0;
 unsigned long ultimaPiscadaLED = 0;
-unsigned long ultimoSom = 0;
+unsigned long inicioEtapaSom = 0;
+
+unsigned long ultimaTentativaWiFi = 0;
+unsigned long ultimaTentativaMQTT = 0;
 
 const unsigned long INTERVALO_LDR = 2000;
 const unsigned long INTERVALO_DHT = 3000;
 const unsigned long INTERVALO_ESTADO = 5000;
 const unsigned long INTERVALO_LED = 400;
-const unsigned long INTERVALO_SOM = 10;
+
+const unsigned long INTERVALO_TENTATIVA_WIFI = 5000;
+const unsigned long INTERVALO_TENTATIVA_MQTT = 5000;
+const unsigned long TIMEOUT_WIFI = 15000;
 
 // ========================================
 // ALERTAS
@@ -79,31 +89,49 @@ const int SOM_UMIDADE[] = {1200, 0, 1200, 0};
 const int DURACAO_UMIDADE[] = {150, 100, 150, 600};
 const int TAM_UMIDADE = 4;
 
-const int SOM_LUMINOSIDADE[] = {1600, 0, 1600, 0, 1600, 0};
-const int DURACAO_LUMINOSIDADE[] = {100, 100, 100, 100, 100, 700};
+const int SOM_LUMINOSIDADE[] = {
+  1600, 0, 1600, 0, 1600, 0
+};
+
+const int DURACAO_LUMINOSIDADE[] = {
+  100, 100, 100, 100, 100, 700
+};
+
 const int TAM_LUMINOSIDADE = 6;
 
 int etapaSom = 0;
-unsigned long inicioEtapaSom = 0;
 
 // ========================================
 // CONEXÃO WIFI
 // ========================================
 
 void conectarWiFi() {
-  Serial.print("Conectando ao Wi-Fi");
+  Serial.println();
+  Serial.println("Conectando ao Wi-Fi Wokwi-GUEST...");
 
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD, 6);
 
-  while (WiFi.status() != WL_CONNECTED) {
+  unsigned long inicio = millis();
+
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - inicio < TIMEOUT_WIFI) {
     delay(500);
     Serial.print(".");
   }
 
   Serial.println();
-  Serial.println("Wi-Fi conectado!");
-  Serial.print("IP local: ");
-  Serial.println(WiFi.localIP());
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("Wi-Fi conectado!");
+    Serial.print("IP local: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("Falha ao conectar ao Wi-Fi.");
+    Serial.print("Status Wi-Fi: ");
+    Serial.println(WiFi.status());
+    Serial.println("Nova tentativa em breve.");
+  }
 }
 
 // ========================================
@@ -195,10 +223,61 @@ void atualizarLED() {
 }
 
 // ========================================
+// ATIVAÇÃO DOS ALERTAS
+// ========================================
+
+void ativarAlerta(TipoAlerta novoAlerta) {
+  alertaAtual = novoAlerta;
+
+  if (novoAlerta == ALERTA_NORMAL) {
+    desligarBuzzer();
+    digitalWrite(LED_AZUL, LOW);
+    ledAzulLigado = false;
+
+    Serial.println("Alertas encerrados.");
+    return;
+  }
+
+  etapaSom = 0;
+  inicioEtapaSom = millis();
+  ultimaPiscadaLED = millis();
+  ledAzulLigado = false;
+
+  digitalWrite(LED_AZUL, LOW);
+
+  switch (alertaAtual) {
+    case ALERTA_TEMPERATURA:
+      tone(BUZZER_PIN, SOM_TEMPERATURA[0]);
+      Serial.println("Alerta de temperatura ativado.");
+      break;
+
+    case ALERTA_UMIDADE:
+      tone(BUZZER_PIN, SOM_UMIDADE[0]);
+      Serial.println("Alerta de umidade ativado.");
+      break;
+
+    case ALERTA_LUMINOSIDADE:
+      tone(BUZZER_PIN, SOM_LUMINOSIDADE[0]);
+      Serial.println("Alerta de luminosidade ativado.");
+      break;
+
+    default:
+      noTone(BUZZER_PIN);
+      return;
+  }
+
+  buzzerLigado = true;
+}
+
+// ========================================
 // RECEBIMENTO DE COMANDOS MQTT
 // ========================================
 
-void callback(char* topico, byte* mensagem, unsigned int tamanho) {
+void callback(
+  char* topico,
+  byte* mensagem,
+  unsigned int tamanho
+) {
   String conteudo = "";
 
   for (unsigned int cont = 0; cont < tamanho; cont++) {
@@ -207,41 +286,66 @@ void callback(char* topico, byte* mensagem, unsigned int tamanho) {
 
   conteudo.trim();
 
-  Serial.print("Mensagem MQTT recebida: ");
+  String topicoRecebido = String(topico);
+
+  Serial.print("Topico recebido: ");
+  Serial.println(topicoRecebido);
+
+  Serial.print("Mensagem recebida: ");
   Serial.println(conteudo);
 
-  // Comandos tradicionais do LED integrado
-  if (String(topico) == TOPICO_SUBSCRIBE) {
+  // Comandos enviados pelo servidor do dashboard.
+  if (topicoRecebido == TOPICO_SUBSCRIBE) {
+
+    // LED integrado, preservando os comandos tradicionais.
     if (conteudo.indexOf("@on") >= 0) {
       digitalWrite(LED_ONBOARD, HIGH);
-    } else if (conteudo.indexOf("@off") >= 0) {
+    }
+
+    if (conteudo.indexOf("@off") >= 0) {
       digitalWrite(LED_ONBOARD, LOW);
+    }
+
+    // Formato do servidor: lamp001@tipo
+    if (conteudo.endsWith("@temperatura") ||
+        conteudo == "temperatura") {
+
+      ativarAlerta(ALERTA_TEMPERATURA);
+
+    } else if (conteudo.endsWith("@umidade") ||
+               conteudo == "umidade") {
+
+      ativarAlerta(ALERTA_UMIDADE);
+
+    } else if (conteudo.endsWith("@luminosidade") ||
+               conteudo == "luminosidade") {
+
+      ativarAlerta(ALERTA_LUMINOSIDADE);
+
+    } else if (conteudo.endsWith("@normal") ||
+               conteudo == "normal") {
+
+      ativarAlerta(ALERTA_NORMAL);
     }
   }
 
-  // Alertas enviados pelo dashboard
-  if (String(topico) == TOPICO_ALERTA) {
+  // Compatibilidade com mensagens enviadas ao tópico de alertas.
+  if (topicoRecebido == TOPICO_ALERTA) {
+
     if (conteudo == "temperatura") {
-      alertaAtual = ALERTA_TEMPERATURA;
-      etapaSom = 0;
-      inicioEtapaSom = millis() - DURACAO_TEMPERATURA[0];
-      Serial.println("Alerta de temperatura ativado.");
+      ativarAlerta(ALERTA_TEMPERATURA);
+
     } else if (conteudo == "umidade") {
-      alertaAtual = ALERTA_UMIDADE;
-      etapaSom = 0;
-      inicioEtapaSom = millis() - DURACAO_UMIDADE[0];
-      Serial.println("Alerta de umidade ativado.");
+      ativarAlerta(ALERTA_UMIDADE);
+
     } else if (conteudo == "luminosidade") {
-      alertaAtual = ALERTA_LUMINOSIDADE;
-      etapaSom = 0;
-      inicioEtapaSom = millis() - DURACAO_LUMINOSIDADE[0];
-      Serial.println("Alerta de luminosidade ativado.");
+      ativarAlerta(ALERTA_LUMINOSIDADE);
+
     } else if (conteudo == "normal") {
-      alertaAtual = ALERTA_NORMAL;
-      desligarBuzzer();
-      digitalWrite(LED_AZUL, LOW);
-      ledAzulLigado = false;
-      Serial.println("Alertas encerrados. LED azul desligado.");
+      ativarAlerta(ALERTA_NORMAL);
+
+    } else {
+      Serial.println("Comando de alerta desconhecido.");
     }
   }
 }
@@ -251,19 +355,25 @@ void callback(char* topico, byte* mensagem, unsigned int tamanho) {
 // ========================================
 
 void conectarMQTT() {
-  while (!clienteMQTT.connected()) {
-    Serial.print("Conectando ao MQTT...");
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Sem Wi-Fi. MQTT aguardando.");
+    return;
+  }
 
-    if (clienteMQTT.connect(MQTT_CLIENT_ID)) {
-      Serial.println(" conectado!");
+  Serial.print("Conectando ao MQTT...");
 
-      clienteMQTT.subscribe(TOPICO_SUBSCRIBE);
-      clienteMQTT.subscribe(TOPICO_ALERTA);
-    } else {
-      Serial.print(" falhou. Código: ");
-      Serial.println(clienteMQTT.state());
-      delay(2000);
-    }
+  if (clienteMQTT.connect(MQTT_CLIENT_ID)) {
+    Serial.println(" conectado!");
+
+    clienteMQTT.subscribe(TOPICO_SUBSCRIBE);
+    clienteMQTT.subscribe(TOPICO_ALERTA);
+
+    Serial.println("Inscricoes MQTT realizadas.");
+
+  } else {
+    Serial.print(" falhou. Codigo: ");
+    Serial.println(clienteMQTT.state());
+    Serial.println("Nova tentativa em breve.");
   }
 }
 
@@ -290,10 +400,13 @@ void publicarValor(const char* topico, float valor) {
   }
 }
 
+// ========================================
+// LEITURA DO LDR
+// ========================================
+
 void lerLuminosidade() {
   int leitura = analogRead(LDR_PIN);
 
-  // Mantém a escala de 0 a 100 utilizada pelo dashboard.
   float luminosidade = map(leitura, 0, 4095, 100, 0);
   luminosidade = constrain(luminosidade, 0, 100);
 
@@ -302,6 +415,10 @@ void lerLuminosidade() {
 
   publicarValor(TOPICO_LUMINOSIDADE, luminosidade);
 }
+
+// ========================================
+// LEITURA DO DHT22
+// ========================================
 
 void lerDHT() {
   float temperatura = dht.readTemperature();
@@ -314,7 +431,7 @@ void lerDHT() {
 
   Serial.print("Temperatura: ");
   Serial.print(temperatura);
-  Serial.println(" °C");
+  Serial.println(" C");
 
   Serial.print("Umidade: ");
   Serial.print(umidade);
@@ -340,16 +457,18 @@ void setup() {
   noTone(BUZZER_PIN);
 
   analogReadResolution(12);
-
   dht.begin();
-
-  conectarWiFi();
 
   clienteMQTT.setServer(MQTT_SERVER, MQTT_PORT);
   clienteMQTT.setCallback(callback);
   clienteMQTT.setKeepAlive(30);
+  clienteMQTT.setSocketTimeout(3);
 
-  conectarMQTT();
+  conectarWiFi();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    conectarMQTT();
+  }
 
   Serial.println("Sistema de monitoramento iniciado.");
 }
@@ -359,28 +478,50 @@ void setup() {
 // ========================================
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    conectarWiFi();
-  }
-
-  if (!clienteMQTT.connected()) {
-    conectarMQTT();
-  }
-
-  clienteMQTT.loop();
-
   unsigned long agora = millis();
 
+  // Reconexão Wi-Fi.
+  if (WiFi.status() != WL_CONNECTED) {
+    if (agora - ultimaTentativaWiFi >=
+        INTERVALO_TENTATIVA_WIFI) {
+
+      ultimaTentativaWiFi = agora;
+      conectarWiFi();
+    }
+  }
+
+  // Reconexão MQTT.
+  if (WiFi.status() == WL_CONNECTED &&
+      !clienteMQTT.connected()) {
+
+    if (agora - ultimaTentativaMQTT >=
+        INTERVALO_TENTATIVA_MQTT) {
+
+      ultimaTentativaMQTT = agora;
+      conectarMQTT();
+    }
+  }
+
+  // Processamento das mensagens recebidas.
+  if (clienteMQTT.connected()) {
+    clienteMQTT.loop();
+  }
+
+  agora = millis();
+
+  // Leitura do LDR.
   if (agora - ultimaLeituraLDR >= INTERVALO_LDR) {
     ultimaLeituraLDR = agora;
     lerLuminosidade();
   }
 
+  // Leitura do DHT22.
   if (agora - ultimaLeituraDHT >= INTERVALO_DHT) {
     ultimaLeituraDHT = agora;
     lerDHT();
   }
 
+  // Estado do dispositivo para o FIWARE.
   if (agora - ultimoEstado >= INTERVALO_ESTADO) {
     ultimoEstado = agora;
 
@@ -389,6 +530,7 @@ void loop() {
     }
   }
 
+  // Atualização contínua dos alertas.
   atualizarLED();
   atualizarBuzzer();
 }

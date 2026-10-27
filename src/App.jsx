@@ -72,10 +72,6 @@ const opcoesGrafico = [
   { chave: CHAVE_TODOS, rotulo: 'Todos', titulo: 'Todos os sensores' },
 ]
 
-/* ------------------------------------------------------------------ */
-/* Ícones (SVG inline, sem dependências extras)                        */
-/* ------------------------------------------------------------------ */
-
 const icones = {
   busca: (
     <>
@@ -127,6 +123,17 @@ const icones = {
       <path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" />
     </>
   ),
+  risco: (
+    <>
+      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </>
+  ),
+  relatorio: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+    </>
+  ),
 }
 
 function Icone({ nome, tamanho = 20 }) {
@@ -160,10 +167,6 @@ function LogoMarca() {
   )
 }
 
-/* ------------------------------------------------------------------ */
-/* Utilitários                                                         */
-/* ------------------------------------------------------------------ */
-
 function carregarLimites() {
   try {
     const salvos = localStorage.getItem('vinheria-limites')
@@ -186,20 +189,23 @@ function carregarNomeEmpresa() {
 
 function obterIniciais(nome) {
   const partes = nome.trim().split(/\s+/).filter(Boolean)
-
-  if (partes.length === 0) {
-    return '?'
-  }
-
-  if (partes.length === 1) {
-    return partes[0].slice(0, 2).toUpperCase()
-  }
-
+  if (partes.length === 0) return '?'
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase()
   return (partes[0][0] + partes[1][0]).toUpperCase()
 }
 
 function formatarNumero(valor) {
   return Number(valor).toLocaleString('pt-BR', { maximumFractionDigits: 1 })
+}
+
+function formatarDuracao(ms) {
+  if (!ms || ms <= 0) return '0 min'
+  const segundos = Math.floor(ms / 1000)
+  const minutos = Math.floor(segundos / 60)
+  const horas = Math.floor(minutos / 60)
+  if (horas > 0) return `${horas}h ${minutos % 60}min`
+  if (minutos > 0) return `${minutos} min`
+  return `${segundos} seg`
 }
 
 function prepararGrafico(dados) {
@@ -214,15 +220,12 @@ function prepararGrafico(dados) {
   }))
 }
 
-// Junta temperatura, umidade e luminosidade em uma única linha do tempo
 function combinarHistorico(historico) {
   const mapa = new Map()
-
   for (const { chave } of configuracoesSensores) {
     for (const item of historico[chave] ?? []) {
       const data = new Date(item.data)
       const instante = Math.floor(data.getTime() / 1000)
-
       const ponto = mapa.get(instante) ?? {
         instante,
         hora: data.toLocaleTimeString('pt-BR', {
@@ -232,12 +235,10 @@ function combinarHistorico(historico) {
         }),
         dataCompleta: data.toLocaleString('pt-BR'),
       }
-
       ponto[chave] = item.valor
       mapa.set(instante, ponto)
     }
   }
-
   return [...mapa.values()].sort((a, b) => a.instante - b.instante)
 }
 
@@ -245,17 +246,10 @@ async function enviarAlerta(alerta) {
   try {
     const resposta = await fetch(URL_BACKEND, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ alerta }),
     })
-
-    if (!resposta.ok) {
-      throw new Error(`Erro HTTP ${resposta.status}`)
-    }
-
-    console.log(`Alerta enviado ao backend: ${alerta}`)
+    if (!resposta.ok) throw new Error(`Erro HTTP ${resposta.status}`)
     return true
   } catch (error) {
     console.error('Erro ao enviar alerta ao ESP32:', error)
@@ -263,17 +257,9 @@ async function enviarAlerta(alerta) {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Gráfico do histórico                                                */
-/* ------------------------------------------------------------------ */
-
 function BalaoGrafico({ active, payload, unidade }) {
-  if (!active || !payload?.length) {
-    return null
-  }
-
+  if (!active || !payload?.length) return null
   const item = payload[0].payload
-
   return (
     <div className="chart-bubble">
       <strong>
@@ -287,11 +273,9 @@ function BalaoGrafico({ active, payload, unidade }) {
 
 function GraficoHistorico({ chave, dados, unidade, cor }) {
   const dadosGrafico = useMemo(() => prepararGrafico(dados), [dados])
-
   if (dadosGrafico.length === 0) {
     return <p className="chart-empty">Aguardando medições históricas...</p>
   }
-
   const valores = dadosGrafico.map((item) => item.valor)
   const maximo = Math.max(...valores)
   const minimo = Math.min(...valores)
@@ -304,93 +288,32 @@ function GraficoHistorico({ chave, dados, unidade, cor }) {
     <>
       <div className="chart-container">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={dadosGrafico}
-            margin={{ top: 28, right: 14, left: 14, bottom: 0 }}
-          >
+          <AreaChart data={dadosGrafico} margin={{ top: 28, right: 14, left: 14, bottom: 0 }}>
             <defs>
               <linearGradient id={idGradiente} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={cor} stopOpacity={0.28} />
                 <stop offset="100%" stopColor={cor} stopOpacity={0} />
               </linearGradient>
             </defs>
-
-            <XAxis
-              dataKey="hora"
-              tick={{ fontSize: 11, fill: '#9aa0b4' }}
-              tickLine={false}
-              axisLine={false}
-              minTickGap={36}
-            />
-
-            <YAxis
-              hide
-              domain={([min, max]) => {
-                const folga = (max - min) * 0.18 || 1
-                return [min - folga, max + folga]
-              }}
-            />
-
-            <Tooltip
-              content={<BalaoGrafico unidade={unidade} />}
-              cursor={{ stroke: cor, strokeOpacity: 0.35, strokeDasharray: '4 4' }}
-            />
-
-            <Area
-              type="monotone"
-              dataKey="valor"
-              stroke={cor}
-              strokeWidth={3}
-              fill={`url(#${idGradiente})`}
-              dot={false}
-              activeDot={{ r: 7, fill: '#fff', stroke: cor, strokeWidth: 3 }}
-              connectNulls
-            />
-
-            {pontoMaximo && (
-              <ReferenceDot
-                x={pontoMaximo.hora}
-                y={pontoMaximo.valor}
-                r={7}
-                fill="#fff"
-                stroke="#ff6b6b"
-                strokeWidth={3}
-              />
-            )}
-
-            {pontoMinimo && pontoMinimo !== pontoMaximo && (
-              <ReferenceDot
-                x={pontoMinimo.hora}
-                y={pontoMinimo.valor}
-                r={7}
-                fill="#fff"
-                stroke="#8b5cf6"
-                strokeWidth={3}
-              />
-            )}
+            <XAxis dataKey="hora" tick={{ fontSize: 11, fill: '#9aa0b4' }} tickLine={false} axisLine={false} minTickGap={36} />
+            <YAxis hide domain={([min, max]) => {
+              const folga = (max - min) * 0.18 || 1
+              return [min - folga, max + folga]
+            }} />
+            <Tooltip content={<BalaoGrafico unidade={unidade} />} cursor={{ stroke: cor, strokeOpacity: 0.35, strokeDasharray: '4 4' }} />
+            <Area type="monotone" dataKey="valor" stroke={cor} strokeWidth={3} fill={`url(#${idGradiente})`} dot={false} activeDot={{ r: 7, fill: '#fff', stroke: cor, strokeWidth: 3 }} connectNulls />
+            {pontoMaximo && <ReferenceDot x={pontoMaximo.hora} y={pontoMaximo.valor} r={7} fill="#fff" stroke="#ff6b6b" strokeWidth={3} />}
+            {pontoMinimo && pontoMinimo !== pontoMaximo && <ReferenceDot x={pontoMinimo.hora} y={pontoMinimo.valor} r={7} fill="#fff" stroke="#8b5cf6" strokeWidth={3} />}
           </AreaChart>
         </ResponsiveContainer>
       </div>
-
       <div className="chart-footer">
         <ul className="chart-legend">
-          <li>
-            <i className="legend-max" />
-            Maior valor: {formatarNumero(maximo)}
-            {unidade}
-          </li>
-          <li>
-            <i className="legend-min" />
-            Menor valor: {formatarNumero(minimo)}
-            {unidade}
-          </li>
+          <li><i className="legend-max" />Maior valor: {formatarNumero(maximo)}{unidade}</li>
+          <li><i className="legend-min" />Menor valor: {formatarNumero(minimo)}{unidade}</li>
         </ul>
-
         <div className="chart-average">
-          <strong>
-            {formatarNumero(media)}
-            <span>{unidade}</span>
-          </strong>
+          <strong>{formatarNumero(media)}<span>{unidade}</span></strong>
           <p>Média das medições</p>
         </div>
       </div>
@@ -399,25 +322,17 @@ function GraficoHistorico({ chave, dados, unidade, cor }) {
 }
 
 function BalaoCombinado({ active, payload }) {
-  if (!active || !payload?.length) {
-    return null
-  }
-
+  if (!active || !payload?.length) return null
   const item = payload[0].payload
-
   return (
     <div className="chart-bubble combined">
       <span>{item.dataCompleta}</span>
-
       {configuracoesSensores.map(({ chave, titulo, unidade, cor }) =>
         item[chave] === undefined || item[chave] === null ? null : (
           <div className="bubble-row" key={chave}>
             <i style={{ background: cor }} />
             {titulo}
-            <strong>
-              {formatarNumero(item[chave])}
-              {unidade}
-            </strong>
+            <strong>{formatarNumero(item[chave])}{unidade}</strong>
           </div>
         ),
       )}
@@ -427,19 +342,14 @@ function BalaoCombinado({ active, payload }) {
 
 function GraficoCombinado({ historico }) {
   const dadosGrafico = useMemo(() => combinarHistorico(historico), [historico])
-
   if (dadosGrafico.length === 0) {
     return <p className="chart-empty">Aguardando medições históricas...</p>
   }
-
   const medias = configuracoesSensores.map((sensor) => {
     const valores = (historico[sensor.chave] ?? []).map((item) => item.valor)
-
     return {
       ...sensor,
-      media: valores.length
-        ? valores.reduce((soma, valor) => soma + valor, 0) / valores.length
-        : null,
+      media: valores.length ? valores.reduce((soma, valor) => soma + valor, 0) / valores.length : null,
     }
   })
 
@@ -447,78 +357,38 @@ function GraficoCombinado({ historico }) {
     <>
       <div className="chart-container">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={dadosGrafico}
-            margin={{ top: 28, right: 14, left: 14, bottom: 0 }}
-          >
-            <XAxis
-              dataKey="hora"
-              tick={{ fontSize: 11, fill: '#9aa0b4' }}
-              tickLine={false}
-              axisLine={false}
-              minTickGap={36}
-            />
-
-            {/* Cada sensor usa a sua própria escala vertical */}
+          <LineChart data={dadosGrafico} margin={{ top: 28, right: 14, left: 14, bottom: 0 }}>
+            <XAxis dataKey="hora" tick={{ fontSize: 11, fill: '#9aa0b4' }} tickLine={false} axisLine={false} minTickGap={36} />
             {configuracoesSensores.map(({ chave }) => (
-              <YAxis
-                key={chave}
-                yAxisId={chave}
-                hide
-                domain={([min, max]) => {
-                  const folga = (max - min) * 0.18 || 1
-                  return [min - folga, max + folga]
-                }}
-              />
+              <YAxis key={chave} yAxisId={chave} hide domain={([min, max]) => {
+                const folga = (max - min) * 0.18 || 1
+                return [min - folga, max + folga]
+              }} />
             ))}
-
-            <Tooltip
-              content={<BalaoCombinado />}
-              cursor={{ stroke: '#9aa0b4', strokeOpacity: 0.4, strokeDasharray: '4 4' }}
-            />
-
+            <Tooltip content={<BalaoCombinado />} cursor={{ stroke: '#9aa0b4', strokeOpacity: 0.4, strokeDasharray: '4 4' }} />
             {configuracoesSensores.map(({ chave, cor }) => (
-              <Line
-                key={chave}
-                yAxisId={chave}
-                type="monotone"
-                dataKey={chave}
-                stroke={cor}
-                strokeWidth={3}
-                dot={false}
-                activeDot={{ r: 6, fill: '#fff', stroke: cor, strokeWidth: 3 }}
-                connectNulls
-              />
+              <Line key={chave} yAxisId={chave} type="monotone" dataKey={chave} stroke={cor} strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#fff', stroke: cor, strokeWidth: 3 }} connectNulls />
             ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
-
       <div className="chart-footer">
         <ul className="chart-legend">
           {medias.map(({ chave, titulo, unidade, cor, media }) => (
-            <li key={chave}>
-              <i style={{ background: cor }} />
-              {titulo}:{' '}
-              {media === null ? '--' : `média ${formatarNumero(media)}${unidade}`}
-            </li>
+            <li key={chave}><i style={{ background: cor }} />{titulo}: {media === null ? '--' : `média ${formatarNumero(media)}${unidade}`}</li>
           ))}
         </ul>
-
-        <p className="chart-note">
-          Cada linha usa a própria escala, então a altura não compara sensores
-          diferentes.
-        </p>
+        <p className="chart-note">Cada linha usa a própria escala, então a altura não compara sensores diferentes.</p>
       </div>
     </>
   )
 }
 
-/* ------------------------------------------------------------------ */
-/* App                                                                 */
-/* ------------------------------------------------------------------ */
-
 function App() {
+  const [awsIpInput, setAwsIpInput] = useState(() => localStorage.getItem('vinheria-aws-ip') || '')
+  const [awsIpConfigurado, setAwsIpConfigurado] = useState(() => localStorage.getItem('vinheria-aws-ip') || '')
+  const [mensagemAws, setMensagemAws] = useState('')
+
   const [sensores, setSensores] = useState({
     temperatura: null,
     umidade: null,
@@ -537,44 +407,75 @@ function App() {
   const [erroHistorico, setErroHistorico] = useState('')
   const [mensagemLimites, setMensagemLimites] = useState('')
 
-  // Perfil da empresa
   const [nomeEmpresa, setNomeEmpresa] = useState(carregarNomeEmpresa)
   const [editandoEmpresa, setEditandoEmpresa] = useState(false)
   const [rascunhoEmpresa, setRascunhoEmpresa] = useState('')
   const [erroEmpresa, setErroEmpresa] = useState('')
 
-  // Interface
   const [sensorGrafico, setSensorGrafico] = useState('temperatura')
   const [busca, setBusca] = useState('')
 
-  // Estados do gerenciamento de dispositivos via backend
   const [dispositivos, setDispositivos] = useState([])
   const [carregandoDispositivos, setCarregandoDispositivos] = useState(true)
-  const [formularioDispositivo, setFormularioDispositivo] =
-    useState({ ...dispositivoInicial })
+  const [formularioDispositivo, setFormularioDispositivo] = useState({ ...dispositivoInicial })
   const [dispositivoEditando, setDispositivoEditando] = useState(null)
   const [mensagemDispositivos, setMensagemDispositivos] = useState('')
   const [erroDispositivos, setErroDispositivos] = useState('')
 
   const ultimoAlertaEnviado = useRef(null)
 
-  // Consulta as medições atuais do Orion
+  // Sincroniza automaticamente o IP salvo no localStorage com o back-end ao iniciar
   useEffect(() => {
+    const savedIp = localStorage.getItem('vinheria-aws-ip')
+    if (savedIp) {
+      fetch('http://localhost:3001/config-ip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip: savedIp }),
+      }).catch(console.error)
+    }
+  }, [])
+
+  async function aplicarAwsIp(e) {
+    e.preventDefault()
+    const ip = awsIpInput.trim()
+    if (!ip) {
+      setMensagemAws('Informe um IP válido.')
+      return
+    }
+    try {
+      const resposta = await fetch('http://localhost:3001/config-ip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip }),
+      })
+      const dados = await resposta.json()
+      if (!resposta.ok) throw new Error(dados.erro || 'Erro ao configurar IP')
+
+      localStorage.setItem('vinheria-aws-ip', ip)
+      setAwsIpConfigurado(ip)
+      setMensagemAws('IP configurado com sucesso!')
+      setTimeout(() => setMensagemAws(''), 3000)
+    } catch (err) {
+      setMensagemAws('Erro ao configurar IP no backend: ' + err.message)
+    }
+  }
+
+  useEffect(() => {
+    if (!awsIpConfigurado) return
     let ativo = true
 
     async function atualizarSensores() {
       try {
         const dados = await buscarSensores()
-
         if (ativo) {
           setSensores(dados)
           setErro('')
         }
       } catch (error) {
         if (ativo) {
-          setErro('Não foi possível carregar os dados dos sensores.')
+          setErro('Não foi possível carregar os dados dos sensores. Verifique o IP da AWS.')
         }
-
         console.error(error)
       }
     }
@@ -586,16 +487,15 @@ function App() {
       ativo = false
       clearInterval(intervalo)
     }
-  }, [])
+  }, [awsIpConfigurado])
 
-  // Consulta o histórico do STH-Comet
   useEffect(() => {
+    if (!awsIpConfigurado) return
     let ativo = true
 
     async function atualizarHistorico() {
       try {
         const dados = await buscarHistorico()
-
         if (ativo) {
           setHistorico(dados)
           setErroHistorico('')
@@ -604,7 +504,6 @@ function App() {
         if (ativo) {
           setErroHistorico('Não foi possível carregar o histórico.')
         }
-
         console.error(error)
       }
     }
@@ -616,62 +515,45 @@ function App() {
       ativo = false
       clearInterval(intervalo)
     }
-  }, [])
+  }, [awsIpConfigurado])
 
-  // Salva os limites no navegador
   useEffect(() => {
     localStorage.setItem('vinheria-limites', JSON.stringify(limites))
   }, [limites])
 
-  // Salva o nome da empresa no navegador
   useEffect(() => {
     try {
       localStorage.setItem('vinheria-empresa', nomeEmpresa)
     } catch (error) {
-      console.error('Não foi possível salvar o nome da empresa:', error)
+      console.error('Erro ao salvar empresa:', error)
     }
-
     document.title = `${nomeEmpresa} · Monitoramento IoT`
   }, [nomeEmpresa])
 
-  // Carrega os dispositivos cadastrados no backend
   useEffect(() => {
     let ativo = true
 
     async function carregarDispositivos() {
       try {
         const resposta = await fetch(URL_DISPOSITIVOS)
-
-        if (!resposta.ok) {
-          throw new Error(`Erro HTTP ${resposta.status}`)
-        }
-
+        if (!resposta.ok) throw new Error(`Erro HTTP ${resposta.status}`)
         const dados = await resposta.json()
-
         if (ativo) {
           setDispositivos(dados)
           setErroDispositivos('')
         }
       } catch (error) {
         if (ativo) {
-          setErroDispositivos(
-            'Não foi possível carregar os dispositivos do backend.',
-          )
+          setErroDispositivos('Não foi possível carregar os dispositivos do backend.')
         }
-
-        console.error('Erro ao carregar dispositivos:', error)
+        console.error(error)
       } finally {
-        if (ativo) {
-          setCarregandoDispositivos(false)
-        }
+        if (ativo) setCarregandoDispositivos(false)
       }
     }
 
     carregarDispositivos()
-
-    return () => {
-      ativo = false
-    }
+    return () => { ativo = false }
   }, [])
 
   function formatarValor(valor) {
@@ -697,114 +579,200 @@ function App() {
     }
 
     if (Number(valor) <= Number(limite.minimo)) {
-      return {
-        ativo: true,
-        mensagem: `Atingiu ou ficou abaixo do mínimo (${limite.minimo})`,
-      }
+      return { ativo: true, mensagem: `Atingiu ou ficou abaixo do mínimo (${limite.minimo})` }
     }
-
     if (Number(valor) >= Number(limite.maximo)) {
-      return {
-        ativo: true,
-        mensagem: `Atingiu ou ultrapassou o máximo (${limite.maximo})`,
-      }
+      return { ativo: true, mensagem: `Atingiu ou ultrapassou o máximo (${limite.maximo})` }
     }
-
     return { ativo: false, mensagem: 'Dentro dos limites' }
   }
 
-  // Posição da leitura dentro da faixa mínimo–máximo (0 a 100)
   function posicaoNaFaixa(chave) {
-    if (verificarAlerta(chave) === null) {
-      return null
-    }
-
+    if (verificarAlerta(chave) === null) return null
     const { minimo, maximo } = limites[chave]
-    const posicao =
-      ((Number(sensores[chave]) - Number(minimo)) /
-        (Number(maximo) - Number(minimo))) *
-      100
-
+    const posicao = ((Number(sensores[chave]) - Number(minimo)) / (Number(maximo) - Number(minimo))) * 100
     return Math.min(100, Math.max(0, Math.round(posicao)))
   }
 
-  // Envia alertas ao ESP32 pelo backend MQTT
   useEffect(() => {
+    if (!awsIpConfigurado) return
     const leiturasValidas = configuracoesSensores.every(({ chave }) => {
       const valor = sensores[chave]
-
-      return (
-        valor !== null &&
-        valor !== undefined &&
-        Number.isFinite(Number(valor))
-      )
+      return valor !== null && valor !== undefined && Number.isFinite(Number(valor))
     })
 
-    if (!leiturasValidas) {
-      return
-    }
+    if (!leiturasValidas) return
 
-    const ativos = configuracoesSensores.filter(({ chave }) =>
-      verificarAlerta(chave)?.ativo,
-    )
-
+    const ativos = configuracoesSensores.filter(({ chave }) => verificarAlerta(chave)?.ativo)
     const alertaAtual = ativos[0]?.chave ?? 'normal'
 
-    if (alertaAtual === ultimoAlertaEnviado.current) {
-      return
-    }
+    if (alertaAtual === ultimoAlertaEnviado.current) return
 
     let cancelado = false
-
     async function atualizarAlertaRemoto() {
       const enviado = await enviarAlerta(alertaAtual)
-
       if (enviado && !cancelado) {
         ultimoAlertaEnviado.current = alertaAtual
       }
     }
 
     atualizarAlertaRemoto()
+    return () => { cancelado = true }
+  }, [sensores, limites, awsIpConfigurado])
 
-    return () => {
-      cancelado = true
+  const indiceRisco = useMemo(() => {
+    let temCritico = false
+    let temAtencao = false
+    let temDadosValidos = false
+    const detalhes = []
+
+    for (const { chave, titulo, unidade } of configuracoesSensores) {
+      const valor = sensores[chave]
+      const limite = limites[chave]
+
+      if (valor === null || valor === undefined || !Number.isFinite(Number(valor)) || !limite) {
+        detalhes.push({ chave, titulo, status: 'indisponivel', mensagem: 'Dados indisponíveis' })
+        continue
+      }
+
+      temDadosValidos = true
+      const v = Number(valor)
+      const min = Number(limite.minimo)
+      const max = Number(limite.maximo)
+      const faixa = max - min
+      const margem = faixa > 0 ? faixa * 0.1 : 1
+
+      if (v < min || v > max) {
+        temCritico = true
+        detalhes.push({
+          chave,
+          titulo,
+          status: 'critico',
+          valor: v,
+          unidade,
+          limiteMin: min,
+          limiteMax: max,
+          mensagem: v < min ? `Abaixo do limite mínimo (${min}${unidade})` : `Acima do limite máximo (${max}${unidade})`,
+        })
+      } else if (v <= min + margem || v >= max - margem) {
+        temAtencao = true
+        detalhes.push({
+          chave,
+          titulo,
+          status: 'atenção',
+          valor: v,
+          unidade,
+          limiteMin: min,
+          limiteMax: max,
+          mensagem: `Próximo ao limite (${min} – ${max}${unidade})`,
+        })
+      } else {
+        detalhes.push({
+          chave,
+          titulo,
+          status: 'normal',
+          valor: v,
+          unidade,
+          limiteMin: min,
+          limiteMax: max,
+          mensagem: 'Dentro dos limites',
+        })
+      }
     }
-  }, [sensores, limites])
 
-  /* ---------------- Limites ---------------- */
+    let nivel = 'normal'
+    if (!awsIpConfigurado || !temDadosValidos) nivel = 'indisponivel'
+    else if (temCritico) nivel = 'critico'
+    else if (temAtencao) nivel = 'atenção'
+
+    return { nivel, detalhes }
+  }, [sensores, limites, awsIpConfigurado])
+
+  const relatorioExposicao = useMemo(() => {
+    const resultado = {}
+    const INTERVALO_MAXIMO_MS = 15 * 60 * 1000
+
+    for (const { chave } of configuracoesSensores) {
+      const lista = historico[chave] ?? []
+      const limite = limites[chave]
+
+      if (!lista.length || !limite || limite.minimo === '' || limite.maximo === '') {
+        resultado[chave] = { tempoDentroMs: 0, tempoForaMs: 0, percentualDentro: null, ocorrencias: 0, valido: false }
+        continue
+      }
+
+      const min = Number(limite.minimo)
+      const max = Number(limite.maximo)
+      let tempoDentroMs = 0, tempoForaMs = 0, ocorrencias = 0, estadoAnteriorFora = null, amostrasValidas = 0
+
+      for (let i = 0; i < lista.length - 1; i++) {
+        const atual = lista[i], proximo = lista[i + 1]
+        const t1 = new Date(atual.data).getTime(), t2 = new Date(proximo.data).getTime()
+        const duracao = t2 - t1
+
+        if (isNaN(t1) || isNaN(t2) || duracao <= 0 || duracao > INTERVALO_MAXIMO_MS) continue
+
+        amostrasValidas++
+        const val = atual.valor
+        const fora = val < min || val > max
+
+        if (fora) {
+          tempoForaMs += duracao
+          if (estadoAnteriorFora === false || estadoAnteriorFora === null) ocorrencias++
+          estadoAnteriorFora = true
+        } else {
+          tempoDentroMs += duracao
+          estadoAnteriorFora = false
+        }
+      }
+
+      const tempoTotal = tempoDentroMs + tempoForaMs
+      const percentualDentro = tempoTotal > 0 ? Math.round((tempoDentroMs / tempoTotal) * 100) : null
+
+      resultado[chave] = { tempoDentroMs, tempoForaMs, percentualDentro, ocorrencias, valido: amostrasValidas > 0 }
+    }
+    return resultado
+  }, [historico, limites])
+
+  const relatorioCondicoes = useMemo(() => {
+    const resultado = {}
+    for (const { chave } of configuracoesSensores) {
+      const lista = historico[chave] ?? []
+      const valoresValidos = lista.map((item) => Number(item.valor)).filter((v) => Number.isFinite(v))
+
+      if (valoresValidos.length === 0) {
+        resultado[chave] = { minimo: null, maximo: null, media: null, quantidade: 0 }
+        continue
+      }
+
+      const min = Math.min(...valoresValidos)
+      const max = Math.max(...valoresValidos)
+      const soma = valoresValidos.reduce((acc, v) => acc + v, 0)
+      const media = soma / valoresValidos.length
+
+      resultado[chave] = { minimo: min, maximo: max, media, quantidade: valoresValidos.length }
+    }
+    return resultado
+  }, [historico])
 
   function alterarLimite(chave, campo, valor) {
     setLimites((atuais) => ({
       ...atuais,
-      [chave]: {
-        ...atuais[chave],
-        [campo]: valor === '' ? '' : Number(valor),
-      },
+      [chave]: { ...atuais[chave], [campo]: valor === '' ? '' : Number(valor) },
     }))
-
     setMensagemLimites('')
   }
 
   function salvarLimites() {
     const invalidos = configuracoesSensores.some(({ chave }) => {
       const limite = limites[chave]
-
-      return (
-        limite.minimo === '' ||
-        limite.maximo === '' ||
-        !Number.isFinite(limite.minimo) ||
-        !Number.isFinite(limite.maximo) ||
-        limite.minimo >= limite.maximo
-      )
+      return limite.minimo === '' || limite.maximo === '' || !Number.isFinite(limite.minimo) || !Number.isFinite(limite.maximo) || limite.minimo >= limite.maximo
     })
 
     if (invalidos) {
-      setMensagemLimites(
-        'Verifique os valores: o mínimo deve ser menor que o máximo.',
-      )
+      setMensagemLimites('Verifique os valores: o mínimo deve ser menor que o máximo.')
       return
     }
-
     localStorage.setItem('vinheria-limites', JSON.stringify(limites))
     setMensagemLimites('Limites salvos com sucesso.')
   }
@@ -815,33 +783,23 @@ function App() {
       umidade: { ...limitesPadrao.umidade },
       luminosidade: { ...limitesPadrao.luminosidade },
     })
-
     setMensagemLimites('Limites padrão restaurados.')
   }
-
-  /* ---------------- Perfil da empresa ---------------- */
 
   function iniciarEdicaoEmpresa() {
     setRascunhoEmpresa(nomeEmpresa)
     setErroEmpresa('')
     setEditandoEmpresa(true)
-
-    document.getElementById('perfil')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'center',
-    })
+    document.getElementById('perfil')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   function salvarEmpresa(event) {
     event.preventDefault()
-
     const nome = rascunhoEmpresa.trim().replace(/\s+/g, ' ')
-
     if (!nome) {
       setErroEmpresa('Informe o nome da empresa.')
       return
     }
-
     setNomeEmpresa(nome)
     setEditandoEmpresa(false)
     setErroEmpresa('')
@@ -852,25 +810,15 @@ function App() {
     setErroEmpresa('')
   }
 
-  /* ---------------- Dispositivos ---------------- */
-
-  // Atualiza os campos do formulário de dispositivos
   function alterarCampoDispositivo(event) {
     const { name, value } = event.target
-
-    setFormularioDispositivo((atual) => ({
-      ...atual,
-      [name]: value,
-    }))
-
+    setFormularioDispositivo((atual) => ({ ...atual, [name]: value }))
     setErroDispositivos('')
     setMensagemDispositivos('')
   }
 
-  // Cadastra um dispositivo ou atualiza um registro no backend
   async function salvarDispositivo(event) {
     event.preventDefault()
-
     const nome = formularioDispositivo.nome.trim()
     const id = formularioDispositivo.id.trim()
     const tipo = formularioDispositivo.tipo.trim()
@@ -883,9 +831,7 @@ function App() {
     }
 
     const idDuplicado = dispositivos.some(
-      (dispositivo) =>
-        dispositivo.id.toLowerCase() === id.toLowerCase() &&
-        dispositivo.id !== dispositivoEditando,
+      (dispositivo) => dispositivo.id.toLowerCase() === id.toLowerCase() && dispositivo.id !== dispositivoEditando,
     )
 
     if (idDuplicado) {
@@ -895,59 +841,34 @@ function App() {
     }
 
     const editando = dispositivoEditando !== null
-
-    const url = editando
-      ? `${URL_DISPOSITIVOS}/${encodeURIComponent(dispositivoEditando)}`
-      : URL_DISPOSITIVOS
-
+    const url = editando ? `${URL_DISPOSITIVOS}/${encodeURIComponent(dispositivoEditando)}` : URL_DISPOSITIVOS
     const metodo = editando ? 'PUT' : 'POST'
 
     try {
       const resposta = await fetch(url, {
         method: metodo,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nome, id, tipo, local }),
       })
-
-      const dados = resposta.status === 204
-        ? null
-        : await resposta.json()
-
-      if (!resposta.ok) {
-        throw new Error(
-          dados?.erro || `Erro HTTP ${resposta.status}`,
-        )
-      }
+      const dados = resposta.status === 204 ? null : await resposta.json()
+      if (!resposta.ok) throw new Error(dados?.erro || `Erro HTTP ${resposta.status}`)
 
       if (editando) {
-        setDispositivos((atuais) =>
-          atuais.map((dispositivo) =>
-            dispositivo.id === dispositivoEditando
-              ? dados
-              : dispositivo,
-          ),
-        )
-
+        setDispositivos((atuais) => atuais.map((d) => (d.id === dispositivoEditando ? dados : d)))
         setMensagemDispositivos('Dispositivo atualizado com sucesso.')
       } else {
         setDispositivos((atuais) => [...atuais, dados])
         setMensagemDispositivos('Dispositivo cadastrado com sucesso.')
       }
-
       setFormularioDispositivo({ ...dispositivoInicial })
       setDispositivoEditando(null)
       setErroDispositivos('')
     } catch (error) {
-      setErroDispositivos(
-        error.message || 'Não foi possível salvar o dispositivo.',
-      )
+      setErroDispositivos(error.message || 'Não foi possível salvar o dispositivo.')
       setMensagemDispositivos('')
     }
   }
 
-  // Prepara um dispositivo para edição
   function editarDispositivo(dispositivo) {
     setFormularioDispositivo({
       nome: dispositivo.nome,
@@ -955,18 +876,12 @@ function App() {
       tipo: dispositivo.tipo,
       local: dispositivo.local,
     })
-
     setDispositivoEditando(dispositivo.id)
     setErroDispositivos('')
     setMensagemDispositivos('')
-
-    document.getElementById('formulario-dispositivo')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'center',
-    })
+    document.getElementById('formulario-dispositivo')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
-  // Cancela a edição e limpa o formulário
   function cancelarEdicaoDispositivo() {
     setFormularioDispositivo({ ...dispositivoInicial })
     setDispositivoEditando(null)
@@ -974,121 +889,79 @@ function App() {
     setMensagemDispositivos('')
   }
 
-  // Leva o usuário ao formulário para cadastrar um novo dispositivo
   function abrirCadastroDispositivo() {
     cancelarEdicaoDispositivo()
-
-    document.getElementById('formulario-dispositivo')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'center',
-    })
-
+    document.getElementById('formulario-dispositivo')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     document.getElementById('campo-nome')?.focus({ preventScroll: true })
   }
 
-  // Exclui um dispositivo do backend
   async function excluirDispositivo(dispositivo) {
-    const confirmou = window.confirm(
-      `Deseja realmente excluir o dispositivo "${dispositivo.nome}"?`,
-    )
-
-    if (!confirmou) {
-      return
-    }
+    const confirmou = window.confirm(`Deseja realmente excluir o dispositivo "${dispositivo.nome}"?`)
+    if (!confirmou) return
 
     try {
-      const resposta = await fetch(
-        `${URL_DISPOSITIVOS}/${encodeURIComponent(dispositivo.id)}`,
-        { method: 'DELETE' },
-      )
-
+      const resposta = await fetch(`${URL_DISPOSITIVOS}/${encodeURIComponent(dispositivo.id)}`, { method: 'DELETE' })
       if (!resposta.ok) {
         const dados = await resposta.json()
         throw new Error(dados.erro || `Erro HTTP ${resposta.status}`)
       }
-
-      setDispositivos((atuais) =>
-        atuais.filter((item) => item.id !== dispositivo.id),
-      )
-
-      if (dispositivoEditando === dispositivo.id) {
-        cancelarEdicaoDispositivo()
-      }
-
+      setDispositivos((atuais) => atuais.filter((item) => item.id !== dispositivo.id))
+      if (dispositivoEditando === dispositivo.id) cancelarEdicaoDispositivo()
       setMensagemDispositivos('Dispositivo excluído com sucesso.')
       setErroDispositivos('')
     } catch (error) {
-      setErroDispositivos(
-        error.message || 'Não foi possível excluir o dispositivo.',
-      )
+      setErroDispositivos(error.message || 'Não foi possível excluir o dispositivo.')
       setMensagemDispositivos('')
     }
   }
 
-  // Busca no topo: filtra a lista de dispositivos
   function enviarBusca(event) {
     event.preventDefault()
-
-    document.getElementById('dispositivos')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    })
+    document.getElementById('dispositivos')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   function moverSensorGrafico(passo) {
-    const indice = opcoesGrafico.findIndex(
-      ({ chave }) => chave === sensorGrafico,
-    )
-    const proximo =
-      (indice + passo + opcoesGrafico.length) % opcoesGrafico.length
-
+    const indice = opcoesGrafico.findIndex(({ chave }) => chave === sensorGrafico)
+    const proximo = (indice + passo + opcoesGrafico.length) % opcoesGrafico.length
     setSensorGrafico(opcoesGrafico[proximo].chave)
   }
 
-  /* ---------------- Valores derivados ---------------- */
-
-  const alertasAtivos = configuracoesSensores.filter(
-    ({ chave }) => verificarAlerta(chave)?.ativo,
-  )
-
-  const sensoresComLeitura = configuracoesSensores.filter(
-    ({ chave }) => verificarAlerta(chave) !== null,
-  ).length
-
-  const sensoresNormais = configuracoesSensores.filter(
-    ({ chave }) => verificarAlerta(chave)?.ativo === false,
-  ).length
-
-  const conformidade = sensoresComLeitura
-    ? Math.round((sensoresNormais / sensoresComLeitura) * 100)
-    : 0
+  const alertasAtivos = configuracoesSensores.filter(({ chave }) => verificarAlerta(chave)?.ativo)
+  const sensoresComLeitura = configuracoesSensores.filter(({ chave }) => verificarAlerta(chave) !== null).length
+  const sensoresNormais = configuracoesSensores.filter(({ chave }) => verificarAlerta(chave)?.ativo === false).length
+  const conformidade = sensoresComLeitura ? Math.round((sensoresNormais / sensoresComLeitura) * 100) : 0
 
   const termoBusca = busca.trim().toLowerCase()
-
   const dispositivosFiltrados = termoBusca
-    ? dispositivos.filter((dispositivo) =>
-        [
-          dispositivo.nome,
-          dispositivo.id,
-          dispositivo.tipo,
-          dispositivo.local,
-        ].some((campo) =>
-          String(campo ?? '').toLowerCase().includes(termoBusca),
-        ),
-      )
+    ? dispositivos.filter((d) => [d.nome, d.id, d.tipo, d.local].some((c) => String(c ?? '').toLowerCase().includes(termoBusca)))
     : dispositivos
 
-  const configuracaoGrafico = configuracoesSensores.find(
-    ({ chave }) => chave === sensorGrafico,
-  )
+  const configuracaoGrafico = configuracoesSensores.find(({ chave }) => chave === sensorGrafico)
 
   return (
     <div className="dashboard">
       <main className="main-content" id="inicio">
+        
+        <div className="aws-config-banner">
+          <div>
+            <h3><i className='bx bx-server'></i> Configuração do Servidor AWS / MQTT</h3>
+            <p>{awsIpConfigurado ? `Conectado ao IP: ${awsIpConfigurado}` : 'Nenhum IP configurado (começa vazio). Informe o IP da AWS abaixo:'}</p>
+            {mensagemAws && <div className="aws-msg" style={{ color: mensagemAws.includes('sucesso') ? '#d1e7dd' : '#ffc8c8' }}>{mensagemAws}</div>}
+          </div>
+          <form className="aws-config-form" onSubmit={aplicarAwsIp}>
+            <input
+              type="text"
+              placeholder="Ex: 3.94.168.155"
+              value={awsIpInput}
+              onChange={(e) => setAwsIpInput(e.target.value)}
+            />
+            <button type="submit">Aplicar IP</button>
+          </form>
+        </div>
+
         <header className="topbar">
           <div className="brand">
             <LogoMarca />
-
             <div>
               <h1>Olá, {nomeEmpresa}</h1>
               <p>Visão geral do monitoramento da sua vinheria</p>
@@ -1128,9 +1001,8 @@ function App() {
           <div className="alert-panel" role="alert">
             <h3>
               <Icone nome="alerta" tamanho={20} />
-              Atenção: limites ambientais atingidos ou ultrapassados
+              Atenção: limites atingidos ou ultrapassados
             </h3>
-
             {alertasAtivos.map(({ chave, titulo, unidade }) => (
               <p key={chave}>
                 <strong>{titulo}:</strong> {verificarAlerta(chave)?.mensagem}.
@@ -1142,11 +1014,9 @@ function App() {
         )}
 
         <section className="overview-grid" id="sensores">
-          {/* Perfil da empresa */}
           <article className="profile-card" id="perfil">
             <div className="profile-head">
               <h2>Perfil da empresa</h2>
-
               {!editandoEmpresa && (
                 <button
                   type="button"
@@ -1231,7 +1101,7 @@ function App() {
                 <h3>{nomeEmpresa}</h3>
                 <p>
                   {sensoresComLeitura > 0
-                    ? `Conformidade ambiental: ${conformidade}%`
+                    ? `Conformidade: ${conformidade}%`
                     : 'Aguardando leituras'}
                 </p>
               </div>
@@ -1264,7 +1134,6 @@ function App() {
             </ul>
           </article>
 
-          {/* Sensores */}
           {configuracoesSensores.map(({ chave, titulo, unidade, icone }) => {
             const alerta = verificarAlerta(chave)
 
@@ -1276,7 +1145,6 @@ function App() {
                 <div className="sensor-top">
                   <div>
                     <h3 className="sensor-title">{titulo}</h3>
-
                     <span
                       className={`sensor-status ${alerta?.ativo ? 'status-alert' : ''}`}
                     >
@@ -1307,7 +1175,6 @@ function App() {
             )
           })}
 
-          {/* Conexão */}
           <div className="connection-bar">
             <div>
               <h3>Sensores conectados</h3>
@@ -1338,11 +1205,13 @@ function App() {
           </div>
         </section>
 
-        {/* Histórico */}
         <section className="history-section" id="historico">
           <div className="section-heading">
             <div>
-              <h2>Histórico ambiental</h2>
+              <h2>
+                <i className='bx bx-history' style={{ marginRight: '8px', verticalAlign: 'middle', color: 'var(--azul)' }}></i>
+                Histórico 
+              </h2>
               <p>Medições registradas pelo STH-Comet</p>
             </div>
 
@@ -1410,9 +1279,157 @@ function App() {
           </div>
         </section>
 
-        {/* Limites e alertas */}
+        <section className="info-cardenciais diferenciais-section" id="indice-risco">
+          <div className="info-card risk-card">
+            <div className="risk-header-row">
+              <div>
+                <h2>Índice de risco</h2>
+                <p>Classificação operacional baseada nos limites configurados</p>
+              </div>
+
+              <span className={`risk-badge risk-[{indiceRisco.nivel}`}>
+                <Icone nome="risco" tamanho={18} />
+                {indiceRisco.nivel === 'normal' && 'Normal'}
+                {indiceRisco.nivel === 'atenção' && 'Atenção (Margem)'}
+                {indiceRisco.nivel === 'critico' && 'Crítico'}
+                {indiceRisco.nivel === 'indisponivel' && 'Indisponível'}
+              </span>
+            </div>
+
+            <ul className="risk-details-list">
+              {indiceRisco.detalhes.map(
+                ({ chave, titulo, status, valor, unidade, mensagem }) => (
+                  <li
+                    key={chave}
+                    className={`risk-detail-item ${status === 'critico' ? 'is-alert' : ''}`}
+                  >
+                    <div className="risk-detail-head">
+                      <span>{titulo}</span>
+                      <span
+                        style={{
+                          color:
+                            status === 'critico'
+                              ? 'var(--vermelho)'
+                              : status === 'atenção'
+                                ? 'var(--laranja)'
+                                : 'var(--verde)',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {status.toUpperCase()}
+                      </span>
+                    </div>
+
+                    <div className="risk-detail-value">
+                      {formatarValor(valor)}
+                      {unidade}
+                    </div>
+
+                    <div className="risk-detail-msg">{mensagem}</div>
+                  </li>
+                ),
+              )}
+            </ul>
+          </div>
+        </section>
+
+        <div className="reports-grid">
+          <article className="report-card" id="relatorio-exposicao">
+            <h3>
+              <Icone nome="relatorio" tamanho={20} />
+              Relatório de exposição 
+            </h3>
+            <p style={{ color: 'var(--tinta-suave)', fontSize: '14px' }}>
+              Tempo estimado fora dos limites nas amostras históricas
+            </p>
+
+            <div style={{ display: 'grid', gap: '14px', marginTop: '6px' }}>
+              {configuracoesSensores.map(({ chave, titulo }) => {
+                const exp = relatorioExposicao[chave] || {}
+                return (
+                  <div key={chave} className="report-stat-box">
+                    <strong>{titulo}</strong>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: '13px',
+                        marginTop: '4px',
+                      }}
+                    >
+                      <span>Dentro: {formatarDuracao(exp.tempoDentroMs)}</span>
+                      <span>Fora: {formatarDuracao(exp.tempoForaMs)}</span>
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: '13px',
+                        color: 'var(--tinta-suave)',
+                        marginTop: '2px',
+                      }}
+                    >
+                      <span>Conformidade: {exp.percentualDentro !== null ? `${exp.percentualDentro}%` : '--'}</span>
+                      <span>Ocorrências: {exp.ocorrencias ?? 0}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="report-note">
+              * Calculado a partir dos timestamps reais das amostras do STH-Comet.
+            </p>
+          </article>
+
+          <article className="report-card" id="relatorio-condicoes">
+            <h3>
+              <Icone nome="relatorio" tamanho={20} />
+              Relatório de condições 
+            </h3>
+            <p style={{ color: 'var(--tinta-suave)', fontSize: '14px' }}>
+              Estatísticas calculadas sobre o histórico de medições
+            </p>
+
+            <div style={{ display: 'grid', gap: '14px', marginTop: '6px' }}>
+              {configuracoesSensores.map(({ chave, titulo, unidade }) => {
+                const cond = relatorioCondicoes[chave] || {}
+                return (
+                  <div key={chave} className="report-stat-box">
+                    <strong>{titulo}</strong>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                        gap: '6px',
+                        marginTop: '4px',
+                        fontSize: '13px',
+                      }}
+                    >
+                      <div>
+                        <span>Mín:</span> <strong>{formatarValor(cond.minimo)}{unidade}</strong>
+                      </div>
+                      <div>
+                        <span>Máx:</span> <strong>{formatarValor(cond.maximo)}{unidade}</strong>
+                      </div>
+                      <div>
+                        <span>Média:</span> <strong>{formatarValor(cond.media !== null ? Math.round(cond.media * 10) / 10 : null)}{unidade}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="report-note">
+              * Considera apenas valores numéricos válidos nas últimas amostras do histórico.
+            </p>
+          </article>
+        </div>
+
         <section className="info-card settings-card" id="configuracoes">
-          <h2>Limites e alertas</h2>
+          <h2>
+            <i className='bx bx-slider-alt' style={{ marginRight: '8px', verticalAlign: 'middle', color: 'var(--azul)' }}></i>
+            Limites e alertas
+          </h2>
           <p>Configure os valores mínimo e máximo aceitos para cada sensor.</p>
 
           <div className="limits-form">
@@ -1472,23 +1489,23 @@ function App() {
         </section>
 
         <footer>
-          {nomeEmpresa} · Sistema de monitoramento ambiental
+          {nomeEmpresa} · Sistema de monitoramento
           <br />
           Estado do dispositivo: {sensores.estado}
         </footer>
       </main>
 
-      {/* Coluna lateral */}
       <aside className="side-panel">
         <section className="side-section" id="dispositivos">
           <div className="side-heading">
             <div>
-              <h2>Dispositivos</h2>
+              <h2>
+                <i className='bx bx-devices' style={{ marginRight: '8px', verticalAlign: 'middle', color: 'var(--azul)' }}></i>
+                Dispositivos
+              </h2>
               <p>
                 {dispositivos.length}{' '}
-                {dispositivos.length === 1
-                  ? 'dispositivo cadastrado'
-                  : 'dispositivos cadastrados'}
+                {dispositivos.length === 1 ? 'dispositivo cadastrado' : 'dispositivos cadastrados'}
               </p>
             </div>
 
@@ -1508,10 +1525,7 @@ function App() {
           ) : dispositivos.length === 0 ? (
             <div className="empty-state">
               <h3>Nenhum dispositivo cadastrado</h3>
-              <p>
-                Preencha o formulário abaixo para adicionar o primeiro
-                dispositivo.
-              </p>
+              <p>Preencha o formulário abaixo para adicionar o primeiro dispositivo.</p>
             </div>
           ) : dispositivosFiltrados.length === 0 ? (
             <div className="empty-state">
@@ -1524,12 +1538,10 @@ function App() {
                 <li className="device-item" key={dispositivo.id}>
                   <div className="device-main">
                     <h3>{dispositivo.nome}</h3>
-
                     <p className="device-meta">
                       <span className="device-type">{dispositivo.tipo}</span>
                       {dispositivo.local}
                     </p>
-
                     <code className="device-id">{dispositivo.id}</code>
                   </div>
 
@@ -1561,9 +1573,7 @@ function App() {
 
           <div className="info-card device-form-card">
             <h3>
-              {dispositivoEditando !== null
-                ? 'Editar dispositivo'
-                : 'Cadastrar dispositivo'}
+              {dispositivoEditando !== null ? 'Editar dispositivo' : 'Cadastrar dispositivo'}
             </h3>
 
             <form
@@ -1641,9 +1651,7 @@ function App() {
 
               <div className="device-actions">
                 <button type="submit" className="btn-primary">
-                  {dispositivoEditando !== null
-                    ? 'Salvar alterações'
-                    : 'Cadastrar dispositivo'}
+                  {dispositivoEditando !== null ? 'Salvar alterações' : 'Cadastrar dispositivo'}
                 </button>
 
                 {dispositivoEditando !== null && (
@@ -1660,17 +1668,17 @@ function App() {
           </div>
 
           <p className="device-storage-note">
-            Os dispositivos são gerenciados pelo backend. Atualmente, os
-            registros ficam em memória e são apagados quando o servidor
-            reinicia. O cadastro ainda não cria entidades no FIWARE.
+            Os dispositivos são gerenciados pelo backend. Atualmente, os registros ficam em memória e são apagados quando o servidor reinicia.
           </p>
         </section>
 
-        {/* Faixas dos sensores */}
         <section className="side-section" id="faixas">
           <div className="side-heading">
             <div>
-              <h2>Faixas dos sensores</h2>
+              <h2>
+                <i className='bx bx-bar-chart-alt-2' style={{ marginRight: '8px', verticalAlign: 'middle', color: 'var(--azul)' }}></i>
+                Faixas dos sensores
+              </h2>
               <p>Posição da leitura entre o mínimo e o máximo</p>
             </div>
           </div>
@@ -1709,13 +1717,6 @@ function App() {
                           ? 'icon-alert'
                           : 'icon-ok'
                     }`}
-                    title={
-                      alerta === null
-                        ? 'Sem leitura'
-                        : alerta.ativo
-                          ? 'Em alerta'
-                          : 'Dentro dos limites'
-                    }
                   >
                     <Icone
                       nome={

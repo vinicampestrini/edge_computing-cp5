@@ -1,4 +1,3 @@
-
 const STH_URL = '/sth-api/STH/v1'
 
 const headers = {
@@ -7,10 +6,17 @@ const headers = {
 }
 
 async function buscarHistoricoAtributo(atributo) {
+  const awsIp = localStorage.getItem('vinheria-aws-ip') || ''
+  
   const url =
     `${STH_URL}/contextEntities/type/Lamp/id/urn:ngsi-ld:Lamp:001/attributes/${atributo}?lastN=20`
 
-  const resposta = await fetch(url, { headers })
+  const resposta = await fetch(url, {
+    headers: {
+      ...headers,
+      'x-aws-ip': awsIp,
+    },
+  })
 
   if (!resposta.ok) {
     throw new Error(

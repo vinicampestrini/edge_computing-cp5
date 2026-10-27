@@ -1,11 +1,16 @@
-const ORION_URL = 'http://3.94.168.155:1026'
-
-const headers = {
-  'fiware-service': 'smart',
-  'fiware-servicepath': '/',
-}
-
 export async function buscarSensores() {
+  const awsIp = localStorage.getItem('vinheria-aws-ip')
+  if (!awsIp) {
+    throw new Error('IP da AWS não configurado. Por favor, informe o IP no topo da página.')
+  }
+
+  const ORION_URL = `http://${awsIp}:1026`
+
+  const headers = {
+    'fiware-service': 'smart',
+    'fiware-servicepath': '/',
+  }
+
   const resposta = await fetch(
     `${ORION_URL}/v2/entities/urn:ngsi-ld:Lamp:001`,
     { headers }
