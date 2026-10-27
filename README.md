@@ -45,8 +45,6 @@ Recurso destinado a analisar o histórico e identificar períodos em que o ambie
 
 Recurso destinado a apresentar estatísticas das medições históricas, incluindo valores mínimos, máximos e médios de temperatura, umidade e luminosidade em um período selecionado.
 
-> **Observação:** os três diferenciais devem ser conferidos no código final para garantir que estejam implementados e funcionando antes da entrega.
-
 ## 1.4. Tecnologias utilizadas
 
 | Tecnologia                  | Aplicação                                               |
