@@ -104,12 +104,6 @@ A arquitetura organiza a solução em camadas responsáveis pela coleta de dados
 
 ![Arquitetura em camadas](src/assets/arquitetura-camadas.jpeg)
 
-
-
-*Figura 1 — Arquitetura em camadas da solução de monitoramento ambiental da vinheria.*
-
-> Salve a imagem da arquitetura na pasta `docs` com o nome `arquitetura-camadas.png`. Se utilizar outro nome ou formato, atualize o caminho acima.
-
 ## 2.2. Camadas da solução
 
 ### Camada física — Sensoriamento e atuação
